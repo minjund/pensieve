@@ -8,7 +8,7 @@ let _db = null;
 function lazyDb() {
   if (_db === null) {
     try { _db = require('./db'); }
-    catch { _db = { mirrorMemory: () => false, deleteMemoryByContent: () => 0 }; }
+    catch { _db = { mirrorMemory: () => false, deleteMemoryByContent: () => 0, markAsExtended: () => 0 }; }
   }
   return _db;
 }
@@ -59,17 +59,49 @@ function serializeEntries(header, entries) {
 }
 
 function evictForLimit(text, target, limit) {
-  if (text.length <= limit) return text;
+  if (text.length <= limit) return { text, evicted: [] };
   const { header, entries } = parseEntries(text);
   const kept = [];
+  const evicted = [];
   let size = (header || '').length;
+  let stopped = false;
   for (let i = entries.length - 1; i >= 0; i--) {
     const block = `\n${SECTION}\n\n${entries[i].body}\n`;
-    if (size + block.length > limit) break;
+    if (stopped || size + block.length > limit) {
+      stopped = true;
+      evicted.push(entries[i]);
+      continue;
+    }
     kept.unshift(entries[i]);
     size += block.length;
   }
-  return serializeEntries(header || defaultHeader(target), kept);
+  return { text: serializeEntries(header || defaultHeader(target), kept), evicted };
+}
+
+function jaccardSimilarity(a, b) {
+  const tok = s => new Set(String(s || '').toLowerCase().replace(/[^a-z0-9가-힣\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2));
+  const A = tok(a), B = tok(b);
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
+function autoConsolidate(text, target, threshold) {
+  const parsed = parseEntries(text);
+  const kept = [];
+  for (let i = parsed.entries.length - 1; i >= 0; i--) {
+    const candidate = parsed.entries[i];
+    const cBody = extractEntryContent(candidate.body);
+    const dup = kept.some(e => {
+      const eBody = extractEntryContent(e.body);
+      if (eBody.length < 8 || cBody.length < 8) return false;
+      return jaccardSimilarity(eBody, cBody) >= threshold;
+    });
+    if (dup) continue;
+    kept.unshift(candidate);
+  }
+  return serializeEntries(parsed.header || defaultHeader(target), kept);
 }
 
 function makeEntryBody(text, meta) {
@@ -97,19 +129,25 @@ function appendEntry(target, text, meta = {}) {
   const value = normalize(text);
   if (!value || value.length < 4) return { ok: false, reason: 'too-short' };
   if (containsSecret(value)) return { ok: false, reason: 'secret-blocked' };
+  if (cfg.blockPromptInjection !== false) {
+    try {
+      const { containsInjection } = require('./content-scanner');
+      if (containsInjection(value)) return { ok: false, reason: 'injection-blocked' };
+    } catch {}
+  }
   const slug = meta.projectSlug || '';
   const filePath = fileFor(target, slug);
   const current = ensureHeader(readText(filePath), target);
   if (current.includes(value)) return { ok: false, reason: 'duplicate' };
   const body = makeEntryBody(value, meta);
   let next = current.trimEnd() + `\n\n${SECTION}\n\n${body}\n`;
+  let evictedEntries = [];
   if (next.length > cfg.memoryCharLimit) {
     const strategy = cfg.memoryOverflowStrategy || 'fifo-evict';
     if (strategy === 'reject') {
       return { ok: false, reason: 'limit-exceeded', limit: cfg.memoryCharLimit, attempted: next.length };
     }
     if (strategy === 'dedupe-first') {
-      // Try in-place dedupe (regex-only). If still over limit, fall through to FIFO.
       const parsed = parseEntries(next);
       const seen = new Set();
       const kept = [];
@@ -120,9 +158,20 @@ function appendEntry(target, text, meta = {}) {
         kept.unshift(parsed.entries[i]);
       }
       next = serializeEntries(parsed.header || defaultHeader(target), kept);
-      if (next.length > cfg.memoryCharLimit) next = evictForLimit(next, target, cfg.memoryCharLimit);
+      if (next.length > cfg.memoryCharLimit) {
+        const r = evictForLimit(next, target, cfg.memoryCharLimit);
+        next = r.text; evictedEntries = r.evicted;
+      }
+    } else if (strategy === 'auto-consolidate') {
+      const threshold = typeof cfg.autoConsolidateThreshold === 'number' ? cfg.autoConsolidateThreshold : 0.85;
+      next = autoConsolidate(next, target, threshold);
+      if (next.length > cfg.memoryCharLimit) {
+        const r = evictForLimit(next, target, cfg.memoryCharLimit);
+        next = r.text; evictedEntries = r.evicted;
+      }
     } else {
-      next = evictForLimit(next, target, cfg.memoryCharLimit);
+      const r = evictForLimit(next, target, cfg.memoryCharLimit);
+      next = r.text; evictedEntries = r.evicted;
     }
   }
   writeText(filePath, next);
@@ -137,7 +186,19 @@ function appendEntry(target, text, meta = {}) {
       content: value,
     });
   } catch {}
-  return { ok: true, target, file: filePath, scope, slug: scope === 'project' ? slug : '', content: value };
+  // Move FIFO-evicted entries to extended store (SQLite) so they remain searchable.
+  if (cfg.extendedStoreEnabled !== false && evictedEntries.length) {
+    try {
+      const markExtended = lazyDb().markAsExtended;
+      if (typeof markExtended === 'function') {
+        for (const ev of evictedEntries) {
+          const cBody = extractEntryContent(ev.body);
+          if (cBody && cBody.length >= 4) markExtended({ scope, project: scope === 'project' ? slug : '', target, content: cBody });
+        }
+      }
+    } catch {}
+  }
+  return { ok: true, target, file: filePath, scope, slug: scope === 'project' ? slug : '', content: value, extended: evictedEntries.length };
 }
 
 function listMemoryFiles(slug) {
@@ -248,4 +309,8 @@ module.exports = {
   consolidateFile,
   listMemoryFiles,
   formatTagLine,
+  evictForLimit,
+  autoConsolidate,
+  jaccardSimilarity,
+  extractEntryContent,
 };

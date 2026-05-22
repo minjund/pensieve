@@ -26,6 +26,10 @@ const DEFAULTS = {
   skillNameDistanceThreshold: 2,
   llmConsolidateEnabled: true,
   llmConsolidateMaxEntries: 40,
+  autoConsolidateThreshold: 0.85,
+  blockPromptInjection: true,
+  extendedStoreEnabled: true,
+  skillAutoExtract: true,
 };
 
 let cached = null;
