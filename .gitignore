@@ -1,0 +1,8 @@
+node_modules/
+*.log
+sh.exe.stackdump
+.DS_Store
+sessions.db
+sessions.db-journal
+sessions.db-wal
+sessions.db-shm

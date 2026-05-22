@@ -1,0 +1,14 @@
+{
+  "memoryCharLimit": 20000,
+  "injectCharLimit": 8000,
+  "transcriptTailLines": 80,
+  "memoryOverflowStrategy": "fifo-evict",
+  "correctionDetection": true,
+  "useLlmExtractor": true,
+  "llmTimeoutMs": 45000,
+  "indexSessions": true,
+  "sessionTailMessagesPerFlush": 200,
+  "currentProject": null,
+  "globalOnlyTargets": ["USER.md"],
+  "projectScopedTargets": ["MEMORY.md", "FAILURES.md", "CONVENTIONS.md", "SKILLS.md"]
+}
