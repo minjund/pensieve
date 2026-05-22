@@ -1,14 +1,14 @@
 {
   "name": "claude-hermes-memory-local",
   "private": true,
-  "version": "0.6.0",
-  "description": "Claude Code Hermes-like memory hook with project scope, config, CRUD CLI, SQLite FTS5 session indexing, skill CRUD with conflict guards, PostToolUse background review, LLM consolidate, prune, sync-markdown, interview, and policy modes",
+  "version": "0.7.0",
+  "description": "Claude Code Hermes-like memory hook with project scope, config, CRUD CLI, SQLite FTS5 session indexing, skill CRUD with conflict guards, PostToolUse background review, LLM consolidate, prune, sync-markdown, interview, auto-consolidate strategy, extended store overflow, skill auto-extraction, and prompt-injection content scanning",
   "bin": {
     "memory-cli": "./memory-cli.js"
   },
   "scripts": {
-    "test": "node --test tests/secrets.test.js tests/scope.test.js tests/files.test.js tests/classify.test.js tests/skills.test.js tests/session-indexer.test.js tests/inject.test.js tests/db.test.js tests/integration.test.js",
-    "test:unit": "node --test tests/secrets.test.js tests/scope.test.js tests/files.test.js tests/classify.test.js tests/skills.test.js tests/session-indexer.test.js tests/inject.test.js tests/db.test.js",
+    "test": "node --test tests/secrets.test.js tests/scope.test.js tests/files.test.js tests/classify.test.js tests/skills.test.js tests/session-indexer.test.js tests/inject.test.js tests/db.test.js tests/integration.test.js tests/auto-consolidate.test.js tests/extended-store.test.js tests/skill-auto-extract.test.js tests/content-scanner.test.js",
+    "test:unit": "node --test tests/secrets.test.js tests/scope.test.js tests/files.test.js tests/classify.test.js tests/skills.test.js tests/session-indexer.test.js tests/inject.test.js tests/db.test.js tests/auto-consolidate.test.js tests/extended-store.test.js tests/skill-auto-extract.test.js tests/content-scanner.test.js",
     "test:integration": "node --test tests/integration.test.js"
   },
   "optionalDependencies": {

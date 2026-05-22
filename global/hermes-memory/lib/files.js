@@ -234,6 +234,13 @@ function findMatchingEntry(filePath, query) {
 
 function replaceEntry(target, query, newText, meta = {}) {
   if (containsSecret(newText)) return { ok: false, reason: 'secret-blocked' };
+  const cfgRE = loadConfig();
+  if (cfgRE.blockPromptInjection !== false) {
+    try {
+      const { containsInjection } = require('./content-scanner');
+      if (containsInjection(newText)) return { ok: false, reason: 'injection-blocked' };
+    } catch {}
+  }
   const slug = meta.projectSlug || '';
   const filePath = fileFor(target, slug);
   const m = findMatchingEntry(filePath, query);

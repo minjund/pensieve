@@ -132,6 +132,14 @@ function createSkill(input) {
   if (containsSecret(description || '') || containsSecret(JSON.stringify(sections))) {
     return { ok: false, reason: 'secret-blocked' };
   }
+  try {
+    const cfgSk = loadConfig();
+    if (cfgSk.blockPromptInjection !== false) {
+      const { containsInjection } = require('./content-scanner');
+      const blob = (description || '') + '\n' + JSON.stringify(sections || {});
+      if (containsInjection(blob)) return { ok: false, reason: 'injection-blocked' };
+    }
+  } catch {}
   const conflicts = checkConflicts({ scope, slug: projectSlug, name: slug, description });
   const blocking = conflicts.filter(c => c.kind === 'exact-slug');
   if (blocking.length && !allowConflicts) {
@@ -177,6 +185,13 @@ function patchSkill({ scope = 'global', project = '', name, sectionKey, newConte
   const slug = sanitizeSlug(name);
   if (!slug || !sectionKey || newContent == null) return { ok: false, reason: 'missing-args' };
   if (containsSecret(newContent)) return { ok: false, reason: 'secret-blocked' };
+  try {
+    const cfgPa = loadConfig();
+    if (cfgPa.blockPromptInjection !== false) {
+      const { containsInjection } = require('./content-scanner');
+      if (containsInjection(newContent)) return { ok: false, reason: 'injection-blocked' };
+    }
+  } catch {}
   const resolved = resolveSkillFile(scope, project, slug);
   if (!resolved) return { ok: false, reason: 'not-found' };
   const filePath = resolved.file;
@@ -206,6 +221,13 @@ function updateSkill({ scope = 'global', project = '', name, description, body }
   if (!resolved) return { ok: false, reason: 'not-found' };
   const filePath = resolved.file;
   if (containsSecret(description || '') || containsSecret(body || '')) return { ok: false, reason: 'secret-blocked' };
+  try {
+    const cfgUp = loadConfig();
+    if (cfgUp.blockPromptInjection !== false) {
+      const { containsInjection } = require('./content-scanner');
+      if (containsInjection((description || '') + '\n' + (body || ''))) return { ok: false, reason: 'injection-blocked' };
+    }
+  } catch {}
   const text = readText(filePath);
   const { fm } = parseFrontmatter(text);
   if (description != null) fm.description = description;
