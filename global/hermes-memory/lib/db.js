@@ -41,7 +41,8 @@ function ensureSchema(db) {
       target TEXT NOT NULL,
       source TEXT,
       category TEXT,
-      content TEXT NOT NULL
+      content TEXT NOT NULL,
+      is_extended INTEGER DEFAULT 0
     );
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       content, target UNINDEXED, scope UNINDEXED, project UNINDEXED, source UNINDEXED, category UNINDEXED, created UNINDEXED,
@@ -87,11 +88,23 @@ function ensureSchema(db) {
   `);
 }
 
+function migrateSchema(db) {
+  // Add is_extended column on existing installs (idempotent).
+  try {
+    const cols = db.prepare(`PRAGMA table_info(memories)`).all();
+    const hasExt = cols.some(c => c.name === 'is_extended');
+    if (!hasExt) {
+      try { db.exec(`ALTER TABLE memories ADD COLUMN is_extended INTEGER DEFAULT 0`); } catch {}
+    }
+  } catch {}
+}
+
 function withDb(fn) {
   const db = openDb(false);
   if (!db) return null;
   try {
     ensureSchema(db);
+    migrateSchema(db);
     return fn(db);
   } finally {
     try { db.close(); } catch {}
@@ -178,6 +191,61 @@ function deleteMemoryByContent({ scope, project, target, content }) {
   }) || 0;
 }
 
+function markAsExtended({ scope, project, target, content }) {
+  return withDb(db => {
+    const info = db.prepare(
+      `UPDATE memories SET is_extended = 1
+       WHERE target = ? AND scope = ? AND project = ? AND content = ?`
+    ).run(target, scope || 'global', project || '', content);
+    if (info.changes > 0) return info.changes;
+    // If not present yet (e.g. mirror skipped), insert as extended row.
+    db.prepare(
+      `INSERT INTO memories(created, scope, project, target, source, category, content, is_extended)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+    ).run(new Date().toISOString(), scope || 'global', project || '', target, 'evicted', '', content);
+    return 1;
+  }) || 0;
+}
+
+function searchExtended(query, opts = {}) {
+  const db = openDb(true);
+  if (!db) return null;
+  try {
+    ensureSchema(db);
+    migrateSchema(db);
+    const q = String(query || '').replace(/"/g, ' ').trim();
+    const limit = Math.max(1, Math.min(100, opts.limit || 20));
+    const filters = ['m.is_extended = 1'];
+    const params = [];
+    if (q) {
+      // Use FTS for ranking then filter by is_extended via join on rowid.
+      const filtersFts = [];
+      const paramsFts = [q];
+      if (opts.target) { filtersFts.push('target = ?'); paramsFts.push(opts.target); }
+      if (opts.scope) { filtersFts.push('scope = ?'); paramsFts.push(opts.scope); }
+      if (opts.project) { filtersFts.push('project = ?'); paramsFts.push(opts.project); }
+      const where = filtersFts.length ? ' AND ' + filtersFts.join(' AND ') : '';
+      const sql = `SELECT m.target, m.scope, m.project, m.source, m.category, m.created,
+                          snippet(memories_fts, 0, '[', ']', '...', 12) AS snippet
+                   FROM memories_fts
+                   JOIN memories m ON m.id = memories_fts.rowid
+                   WHERE memories_fts MATCH ?${where} AND m.is_extended = 1
+                   ORDER BY rank LIMIT ${limit}`;
+      return db.prepare(sql).all(...paramsFts);
+    }
+    if (opts.target) { filters.push('target = ?'); params.push(opts.target); }
+    if (opts.scope) { filters.push('scope = ?'); params.push(opts.scope); }
+    if (opts.project) { filters.push('project = ?'); params.push(opts.project); }
+    const where = ' WHERE ' + filters.join(' AND ');
+    const sql = `SELECT target, scope, project, source, category, created,
+                        substr(content, 1, 200) AS snippet
+                 FROM memories m${where}
+                 ORDER BY id DESC LIMIT ${limit}`;
+    return db.prepare(sql).all(...params);
+  } catch { return []; }
+  finally { try { db.close(); } catch {} }
+}
+
 function deleteMemoryForTarget({ scope, project, target }) {
   return withDb(db => {
     const info = db.prepare(
@@ -191,6 +259,7 @@ module.exports = {
   loadDriver,
   openDb,
   ensureSchema,
+  migrateSchema,
   withDb,
   mirrorMemory,
   searchMemories,
@@ -198,5 +267,7 @@ module.exports = {
   getStats,
   deleteMemoryByContent,
   deleteMemoryForTarget,
+  markAsExtended,
+  searchExtended,
   DB_PATH,
 };

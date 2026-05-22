@@ -25,6 +25,7 @@ const {
 const {
   searchMemories,
   searchSessions,
+  searchExtended,
   getStats,
   deleteMemoryForTarget,
   mirrorMemory,
@@ -144,6 +145,10 @@ function cmdSearch(args) {
   if (args.flags.sessions) {
     const s = searchSessions(q, opts);
     out.sessions = s || [];
+  }
+  if (args.flags.extended) {
+    const e = searchExtended(q, opts);
+    out.extended = e || [];
   }
   logJson(out);
 }
@@ -558,7 +563,7 @@ function help() {
   add      <TARGET.md> "<content>"        [--scope global|project] [--project NAME] [--category C] [--tag T]
   replace  <TARGET.md> "<query>" "<new>"  [--scope ...] [--project NAME]
   remove   <TARGET.md> "<query>"          [--scope ...] [--project NAME]
-  search   "<query>"                      [--scope ...] [--project NAME] [--target X.md] [--sessions] [--limit N] [--role ...]
+  search   "<query>"                      [--scope ...] [--project NAME] [--target X.md] [--sessions] [--extended] [--limit N] [--role ...]
   insights                                [--project NAME]
   preview-context                         [--project NAME] [--json]
   consolidate                             [--project NAME] [--dry-run] [--llm]
