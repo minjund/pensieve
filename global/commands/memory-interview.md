@@ -1,22 +1,46 @@
 # memory-interview
 
-Interview the user to populate Claude Hermes Memory.
+비개발자 친화 인터뷰입니다. 개발자임이 드러나면 추가 질문을 더 합니다.
 
-Ask concise questions in Korean unless the user prefers another language:
+## 기본 인터뷰 (모두에게)
 
-1. Preferred language and answer style
-2. Role/team/context
-3. Tools and OS
-4. Coding/package-manager preferences
-5. Things the assistant must not do
-6. Projects that should have persistent notes
-7. Any past failures/corrections to remember
+한국어로 짧게 물어보세요(사용자가 다른 언어를 선호하면 그 언어로):
 
-After the user answers, update:
+1. 어떤 언어·말투로 답을 받고 싶으세요? (예: 한국어 존댓말, 영어 캐주얼)
+2. 무슨 일을 하시나요? 또는 어떤 일·취미에 시간을 많이 쓰시나요?
+3. 평소에 어떤 기기·프로그램을 자주 쓰세요? (예: Windows 노트북, iPhone, Word, Notion)
+4. AI가 절대 하지 말았으면 하는 것이 있나요? (예: 농담 금지, 영어 답변 금지)
+5. 따로 기억해뒀으면 하는 일·프로젝트·취미가 있나요?
+6. 예전에 AI가 헷갈리게 답하거나 잘못 기억했던 적이 있나요?
 
-- `~/.claude/memory/USER.md` for preferences/profile
-- `~/.claude/memory/MEMORY.md` for durable global facts
-- `~/.claude/memory/FAILURES.md` for corrections/failures
-- `~/.claude/memory/PROJECTS.md` for project-specific notes
+## 개발자 감지 → 추가 인터뷰
 
-Never store secrets, tokens, passwords, or API keys.
+2번 답변에서 다음 키워드가 보이면 개발자로 판단하고 아래 질문을 **이어서** 합니다:
+`개발자`, `엔지니어`, `프로그래머`, `코딩`, `개발`, `dev`, `engineer`, `programmer`, `software`, `frontend`, `backend`, `풀스택`, `데이터 분석`, `데이터 엔지니어`, `ML`, `머신러닝`, `DevOps`, `SRE`
+
+추가 질문:
+
+A. 주로 쓰는 언어·스택은? (예: TypeScript/Next.js, Python/FastAPI, Go, Rust)
+B. 패키지 매니저 선호가 있나요? (npm/pnpm/yarn, pip/poetry/uv, cargo 등)
+C. 운영체제와 셸은? (Windows/PowerShell, macOS/zsh, Linux/bash)
+D. 에디터·IDE는? (VS Code, JetBrains, Neovim, Cursor)
+E. 자주 쓰는 프레임워크·도구·CI는?
+F. 코드 스타일이나 컨벤션에서 강하게 선호하는 게 있나요? (탭/스페이스, 세미콜론, 함수형/객체지향 등)
+G. AI가 코드를 만질 때 절대 하지 말았으면 하는 동작은? (예: 임의로 force push, 테스트 없이 머지, 주석 과다 생성)
+
+## 저장 규칙
+
+답변 후 아래 파일을 업데이트:
+
+- `~/.claude/memory/USER.md` — 선호도, 말투, 직업, 사용 기기
+- `~/.claude/memory/MEMORY.md` — 영속적인 일반 사실 (개발자 답변의 스택·OS·도구 등)
+- `~/.claude/memory/FAILURES.md` — 과거 실수·교정 사항
+- `~/.claude/projects-memory/<project>/MEMORY.md` — 프로젝트별 기억해야 할 항목 (5번 답변)
+
+비밀번호, 토큰, API 키, 카드번호는 절대 저장하지 마세요. 발견하면 그 부분만 빼고 저장하고 사용자에게 알려주세요.
+
+## 진행 톤
+
+- 한 번에 한 질문씩만 묻고 답을 들으세요. 7개를 한꺼번에 나열하지 마세요.
+- 사용자가 "스킵", "다음", "모르겠어"라고 하면 해당 항목 건너뛰기.
+- 인터뷰 끝에 "이런 식으로 저장했습니다"를 짧게 요약해서 보여주고, 수정할 항목이 있는지 물어보세요.

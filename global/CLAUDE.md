@@ -1,16 +1,26 @@
 # Global Claude Memory
 
-Claude Hermes Memory v0.6 is active in this installation.
+Pensieve (Claude memory system) v0.10 is active in this installation.
 
 ## Storage Layout
 
 - `~/.claude/memory/USER.md` — global user preferences (always global)
+- `~/.claude/memory/BEHAVIOR.md` (and `~/.claude/projects-memory/<project>/BEHAVIOR.md`) — always-on behavior rules. Injected **verbatim every turn**, bypassing the per-file tail / `injectCharLimit` truncation, so critical rules can never be cut from the window. Keep it short; hand-edit it. Absent file = no-op.
+- `~/.claude/memory/SUMMARY.md` (and `~/.claude/projects-memory/<project>/SUMMARY.md`) — curated project overview ("what this project is / where it stands"). Injected as the `<project-summary>` card, **pinned above the verbatim dump** so project continuity survives the snapshot char cap — the same protection `<who>` gives identity and `BEHAVIOR.md` gives rules. Hand- or LLM-maintained; keep it short. Absent file = no-op.
 - `~/.claude/memory/MEMORY.md`, `FAILURES.md`, `SKILLS.md`, `PROJECTS.md` — global notes when no project is active
 - `~/.claude/projects-memory/<project>/MEMORY.md`, `FAILURES.md`, `CONVENTIONS.md`, `SKILLS.md` — project-scoped notes
 - `~/.claude/memory/sessions.db` — SQLite FTS5 mirror (memories + session messages) when `better-sqlite3` is installed
 - `~/.claude/hermes-memory-config.json` — runtime config (limits, strategy, LLM toggle)
 
 The hook auto-derives the project slug from `basename(cwd)`. Override with `/memory-switch-project <name>` or `currentProject` in the config file.
+
+**Injection modes** (`memoryMode` in config):
+- `project` (default) — inject the **active project's memory** (highest value) + the always-on `BEHAVIOR.md` card + a condensed `<global-digest>` of global cross-project memory. Global bulk is **not** full-dumped; retrieve it on demand with `/memory-search`. This makes project memory the priority. The project dump uses **entry-level newest-first merge** (`dumpMergeByDate`, default true): the 4 project files (MEMORY/FAILURES/CONVENTIONS/SKILLS) are split into entries, sorted by date descending, deduped, and filled up to `injectCharLimit` from the newest down (`- [date file] content` lines); dropped older entries are flagged with `+N older — /memory-search`. Set `dumpMergeByDate:false` for the legacy per-file tail dump.
+- `policy-only` — policy + behavior card only; no dump, no digest. Everything on demand via `/memory-search`. Most token-light.
+- `inject` — policy + behavior card + **full** dump of both global and project memory (the old eager behavior; can truncate).
+- `legacy-inject` — full dump of both, no policy block.
+
+**Always-on cards** ride along in every mode (including `policy-only`), pinned above the verbatim dump so they survive the `snapshotCharLimit` cap: the identity `<who>` card, the `BEHAVIOR.md` `<behavior-rules>` card, the `SUMMARY.md` `<project-summary>` card, and the `<continuity>` card (most recent saved project entries — the only continuity source on `SessionStart`, where there is no prompt yet so auto-recall cannot fire). Toggle/size with `behaviorCardEnabled`, `summaryCardEnabled`/`summaryCardCharLimit`, `continuityEnabled`/`continuityCharLimit`/`continuityMaxEntries`. The `<global-digest>` appears only in `project` mode (toggle `globalDigestEnabled`, size `globalDigestCharLimit`); it condenses global `MEMORY/FAILURES/SKILLS/PROJECTS` (recent entries, deduped, capped) — `USER.md` is excluded since the card covers its essence.
 
 ## Slash Commands
 
@@ -29,6 +39,7 @@ Memory:
 - `/memory-mode show|policy|legacy|full|compact|none|custom|set` — change policy mode/style
 - `/memory-prune [--older-than DAYS] [--dry-run]` — gc old entries
 - `/memory-interview` — interactive USER.md profile setup
+- `/memory-clean-noise [--dry-run] [--silent]` — strip extraction-prompt / slash-command / system-tag noise. Runs automatically on Stop / SubagentStop / PreCompact and after background-review when `autoCleanNoise` (default true) is on. Deletions logged to `~/.claude/hermes-memory/state/cleanup-log.jsonl`.
 
 Skills:
 - `/skill-create <name> --description "..." --trigger /x --when ... --procedure ... --pitfalls ... --verify ...`

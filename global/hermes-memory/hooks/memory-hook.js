@@ -13,10 +13,11 @@ const { STATE_DIR, HERMES_DIR } = require(path.join(__dirname, '..', 'lib', 'pat
 const { loadConfig } = require(path.join(__dirname, '..', 'lib', 'config'));
 const { resolveProjectSlug } = require(path.join(__dirname, '..', 'lib', 'scope'));
 const { classifyAndSave } = require(path.join(__dirname, '..', 'lib', 'classify'));
-const { appendEntry } = require(path.join(__dirname, '..', 'lib', 'files'));
+const { appendEntry, listMemoryFiles, consolidateFileSimilar } = require(path.join(__dirname, '..', 'lib', 'files'));
 const { composeContext } = require(path.join(__dirname, '..', 'lib', 'inject'));
 const { parseTranscriptFile, indexTranscript } = require(path.join(__dirname, '..', 'lib', 'session-indexer'));
 const { callClaude, parseJsonStrict } = require(path.join(__dirname, '..', 'lib', 'llm'));
+const noiseDetector = require(path.join(__dirname, '..', 'lib', 'noise-detector'));
 
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
 function parseJson(s) { try { return JSON.parse(s || '{}'); } catch { return {}; } }
@@ -36,19 +37,39 @@ function emitContext(eventName, text) {
 
 function memorySaveSummary(saved) {
   if (!saved.length) return '';
-  const parts = saved.map(s => `${s.scope || 'global'}/${s.target}`);
-  return `<memory-save-notice>Saved memory to: ${[...new Set(parts)].join(', ')}</memory-save-notice>`;
+  const first = saved.find(s => s && typeof s.content === 'string' && s.content.trim()) || saved[0];
+  const raw = (first && first.content ? first.content : '').replace(/\s+/g, ' ').trim();
+  const snippet = raw.length > 80 ? raw.slice(0, 77) + '...' : raw;
+  const more = saved.length > 1 ? ` (+${saved.length - 1})` : '';
+  return `<memory-save-notice>${snippet}${more}</memory-save-notice>`;
+}
+
+// SessionStart: inject the heavy "frozen snapshot" once. It persists for the whole
+// session (Claude Code re-runs this on --resume), so per-turn injection stays light.
+function handleSessionStart(data) {
+  const cwd = data.cwd || process.cwd();
+  const slug = resolveProjectSlug(cwd);
+  const { text: ctx } = composeContext(cwd, { projectSlug: slug });
+  emitContext('SessionStart', ctx);
 }
 
 function handleUserPrompt(data) {
   const cwd = data.cwd || process.cwd();
+  const cfg = loadConfig();
   const slug = resolveProjectSlug(cwd);
   const prompt = data.user_prompt || data.prompt || '';
   const meta = { cwd, projectSlug: slug, source: 'UserPromptSubmit' };
 
   const saved = classifyAndSave(prompt, meta);
   const saveNotice = memorySaveSummary(saved);
-  const { text: ctx, slug: usedSlug } = composeContext(cwd, { projectSlug: slug, saveNotice });
+  // Light per-turn (snapshot already carries the heavy memory via SessionStart) +
+  // auto-recall keyed on the current prompt.
+  const { text: ctx, slug: usedSlug } = composeContext(cwd, {
+    projectSlug: slug,
+    saveNotice,
+    prompt,
+    light: cfg.perTurnLight !== false,
+  });
 
   const state = loadState(data.session_id);
   state.promptCount = (state.promptCount || 0) + 1;
@@ -123,12 +144,30 @@ function handleStopLike(data) {
     });
   }
 
+  let cleanupResult = null;
+  if (cfg.autoCleanNoise !== false) {
+    try { cleanupResult = noiseDetector.cleanAll({ slug, dryRun: false, silent: true }); } catch {}
+  }
+
+  let consolidateRemoved = 0;
+  if (cfg.autoConsolidate !== false) {
+    try {
+      const th = typeof cfg.autoConsolidateThreshold === 'number' ? cfg.autoConsolidateThreshold : 0.85;
+      for (const f of listMemoryFiles(slug)) {
+        const r = consolidateFileSimilar(f.path, th);
+        if (r && r.removed) consolidateRemoved += r.removed;
+      }
+    } catch {}
+  }
+
   const state = loadState(data.session_id);
   state.lastReview = new Date().toISOString();
   state.lastEvent = data.hook_event_name || 'Stop';
   state.lastProject = slug;
   state.savedLastReview = [...new Set(saved.map(s => `${s.scope || 'global'}/${s.target}`))];
   state.lastSessionIndex = sessionResult || null;
+  state.lastCleanupRemoved = cleanupResult ? cleanupResult.totalRemoved : 0;
+  state.lastConsolidateRemoved = consolidateRemoved;
   state.turnsSinceReview = 0;
   state.toolCallsSinceReview = 0;
   saveState(data.session_id, state);
@@ -180,6 +219,7 @@ function handlePostToolUse(data) {
 function main() {
   const data = parseJson(readStdin());
   const event = data.hook_event_name || data.hookEventName || process.env.CLAUDE_HOOK_EVENT || '';
+  if (event === 'SessionStart') return handleSessionStart(data);
   if (event === 'UserPromptSubmit') return handleUserPrompt(data);
   if (event === 'Stop' || event === 'SubagentStop' || event === 'PreCompact') return handleStopLike(data);
   if (event === 'PostToolUse') return handlePostToolUse(data);

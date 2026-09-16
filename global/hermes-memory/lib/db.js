@@ -145,6 +145,37 @@ function searchMemories(query, opts = {}) {
   finally { try { db.close(); } catch {} }
 }
 
+// Like searchMemories but returns FULL entry content (joined from memories),
+// for deterministic auto-recall injection. Sanitizes the raw prompt into a
+// forgiving OR query so arbitrary user text never throws on FTS5 syntax.
+function recallMemories(query, opts = {}) {
+  const db = openDb(true);
+  if (!db) return null;
+  try {
+    ensureSchema(db);
+    const tokens = String(query || '')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 2)
+      .slice(0, 12);
+    if (!tokens.length) return [];
+    const ftsQuery = tokens.map(t => `"${t}"`).join(' OR ');
+    const limit = Math.max(1, Math.min(20, opts.limit || 6));
+    const filters = [];
+    const params = [ftsQuery];
+    if (opts.target) { filters.push('m.target = ?'); params.push(opts.target); }
+    if (opts.project) { filters.push('m.project = ?'); params.push(opts.project); }
+    const where = filters.length ? ' AND ' + filters.join(' AND ') : '';
+    const sql = `SELECT m.target, m.scope, m.project, m.content
+                 FROM memories_fts
+                 JOIN memories m ON m.id = memories_fts.rowid
+                 WHERE memories_fts MATCH ?${where}
+                 ORDER BY rank LIMIT ${limit}`;
+    return db.prepare(sql).all(...params);
+  } catch { return []; }
+  finally { try { db.close(); } catch {} }
+}
+
 function searchSessions(query, opts = {}) {
   const db = openDb(true);
   if (!db) return null;
@@ -263,6 +294,7 @@ module.exports = {
   withDb,
   mirrorMemory,
   searchMemories,
+  recallMemories,
   searchSessions,
   getStats,
   deleteMemoryByContent,

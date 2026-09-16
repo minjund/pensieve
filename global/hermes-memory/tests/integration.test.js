@@ -92,7 +92,7 @@ test('CLI: mode set persists nudgeToolCalls to config', () => {
   assert.equal(cfg.nudgeToolCalls, 7);
 });
 
-test('Hook: UserPromptSubmit emits memory-policy + memory-context JSON', () => {
+test('Hook: UserPromptSubmit is LIGHT — policy + behavior, no heavy dump (snapshot carries it)', () => {
   const r = hookEvent({
     hook_event_name: 'UserPromptSubmit',
     session_id: 'integ-sess',
@@ -104,6 +104,25 @@ test('Hook: UserPromptSubmit emits memory-policy + memory-context JSON', () => {
   assert.ok(out.hookSpecificOutput);
   assert.equal(out.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
   assert.match(out.hookSpecificOutput.additionalContext, /<memory-policy>/);
+  assert.match(out.hookSpecificOutput.additionalContext, /<recall-behavior>/);
+  // perTurnLight default: the verbatim memory dump is NOT re-injected every turn.
+  assert.doesNotMatch(out.hookSpecificOutput.additionalContext, /<memory-context>/);
+});
+
+test('Hook: SessionStart emits the heavy snapshot with project memory', () => {
+  const r = hookEvent({
+    hook_event_name: 'SessionStart',
+    session_id: 'integ-sess',
+    cwd: TMP,
+    source: 'startup',
+  });
+  assert.equal(r.code, 0);
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.hookSpecificOutput);
+  assert.equal(out.hookSpecificOutput.hookEventName, 'SessionStart');
+  assert.match(out.hookSpecificOutput.additionalContext, /<memory-policy>/);
+  assert.match(out.hookSpecificOutput.additionalContext, /<recall-behavior>/);
+  // The snapshot carries the active project's memory verbatim.
   assert.match(out.hookSpecificOutput.additionalContext, /<memory-context>/);
 });
 
@@ -150,10 +169,11 @@ test('CLI: stats returns shape with db + projects + config path', () => {
   assert.ok('config' in out);
 });
 
-test('CLI: preview-context emits memory-policy + memory-context tags', () => {
+test('CLI: preview-context emits memory-policy + project memory in project default mode', () => {
   const r = cli('preview-context');
   assert.equal(r.code, 0);
   assert.match(r.stdout, /<memory-policy>/);
+  // project default → active project's memory is dumped in the preview
   assert.match(r.stdout, /<memory-context>/);
 });
 

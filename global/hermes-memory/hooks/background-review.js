@@ -16,6 +16,7 @@ const { appendEntry } = require(path.join(ROOT, 'lib', 'files'));
 const { parseTranscriptFile } = require(path.join(ROOT, 'lib', 'session-indexer'));
 const { callClaude, parseJsonStrict } = require(path.join(ROOT, 'lib', 'llm'));
 const { createSkill } = require(path.join(ROOT, 'lib', 'skills'));
+const noiseDetector = require(path.join(ROOT, 'lib', 'noise-detector'));
 
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`);
@@ -116,7 +117,14 @@ ${tail}`;
       skillsCreated.push({ name: sk.name, ok: r.ok, reason: r.reason || null, scope: scopeChoice });
     }
   }
-  logState(sessionId, { ok: true, saved, count: saved.length, skills: skillsCreated, at: new Date().toISOString() });
+  let cleaned = 0;
+  if (cfg.autoCleanNoise !== false) {
+    try {
+      const r = noiseDetector.cleanAll({ slug, dryRun: false, silent: true });
+      cleaned = r.totalRemoved || 0;
+    } catch {}
+  }
+  logState(sessionId, { ok: true, saved, count: saved.length, skills: skillsCreated, cleaned, at: new Date().toISOString() });
 }
 
 try { main(); } catch (e) {

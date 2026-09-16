@@ -298,6 +298,36 @@ function consolidateFile(filePath) {
   return { ok: true, kept: kept.length, removed: entries.length - kept.length };
 }
 
+// Jaccard-similarity dedupe: collapses near-duplicate entries (differ only by
+// spacing/particles/punctuation). Removed entries are deleted from the SQLite mirror.
+function consolidateFileSimilar(filePath, threshold) {
+  const text = readText(filePath);
+  if (!text) return { ok: true, kept: 0, removed: 0 };
+  const target = path.basename(filePath);
+  const before = parseEntries(text);
+  if (before.entries.length < 2) return { ok: true, kept: before.entries.length, removed: 0 };
+  const th = typeof threshold === 'number' ? threshold : 0.85;
+  const next = autoConsolidate(text, target, th);
+  const after = parseEntries(next);
+  const removedBodies = before.entries
+    .filter(e => !after.entries.some(k => k.body === e.body))
+    .map(e => extractEntryContent(e.body))
+    .filter(c => c && c.length >= 4);
+  writeText(filePath, next);
+  if (removedBodies.length) {
+    try {
+      const cfg = loadConfig();
+      const slugMatch = /projects-memory[\\/]([^\\/]+)[\\/]/.exec(filePath);
+      const scope = slugMatch && !cfg.globalOnlyTargets.includes(target) ? 'project' : 'global';
+      const del = lazyDelete();
+      for (const c of removedBodies) {
+        del({ scope, project: scope === 'project' ? slugMatch[1] : '', target, content: c });
+      }
+    } catch {}
+  }
+  return { ok: true, kept: after.entries.length, removed: before.entries.length - after.entries.length };
+}
+
 module.exports = {
   SECTION,
   ensureDir,
@@ -314,6 +344,7 @@ module.exports = {
   replaceEntry,
   removeEntry,
   consolidateFile,
+  consolidateFileSimilar,
   listMemoryFiles,
   formatTagLine,
   evictForLimit,

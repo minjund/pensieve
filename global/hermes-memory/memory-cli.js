@@ -34,6 +34,7 @@ const { indexTranscript } = require('./lib/session-indexer');
 const skills = require('./lib/skills');
 const { callClaude, parseJsonStrict } = require('./lib/llm');
 const { composeContext } = require('./lib/inject');
+const noiseDetector = require('./lib/noise-detector');
 
 function parseArgs(argv) {
   const out = { _: [], flags: {} };
@@ -388,6 +389,21 @@ function cmdPrune(args) {
   logJson({ ok: true, olderThanDays: days, report });
 }
 
+// ---- clean-noise ----
+
+function cmdCleanNoise(args) {
+  const cwd = args.flags.cwd || process.cwd();
+  const slug = args.flags.project ? sanitizeSlug(args.flags.project) : resolveProjectSlug(cwd);
+  const dryRun = !!args.flags['dry-run'];
+  const silent = !!args.flags.silent;
+  const r = noiseDetector.cleanAll({ slug, dryRun, silent });
+  if (silent) {
+    process.stdout.write(JSON.stringify({ ok: true, totalRemoved: r.totalRemoved, dryRun }) + '\n');
+    return;
+  }
+  logJson(r);
+}
+
 // ---- sync-markdown ----
 
 function cmdSyncMarkdown(args) {
@@ -567,6 +583,7 @@ function help() {
   insights                                [--project NAME]
   preview-context                         [--project NAME] [--json]
   consolidate                             [--project NAME] [--dry-run] [--llm]
+  clean-noise                             [--project NAME] [--dry-run] [--silent]
   switch-project [<name>|clear]
   index-sessions <path-or-dir>            [--project NAME]
   sync-markdown                           [--project NAME]
@@ -596,6 +613,7 @@ function main() {
     case 'switch-project': return cmdSwitchProject(args);
     case 'index-sessions': return cmdIndexSessions(args);
     case 'sync-markdown': return cmdSyncMarkdown(args);
+    case 'clean-noise': return cmdCleanNoise(args);
     case 'stats': return cmdStats();
     case 'mode': return cmdMode(args);
     case 'prune': return cmdPrune(args);

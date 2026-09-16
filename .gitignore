@@ -6,3 +6,11 @@ sessions.db
 sessions.db-journal
 sessions.db-wal
 sessions.db-shm
+
+# Local development settings and generated artifacts
+.claude/
+/.planning/
+/dist/
+.env
+.env.*
+!.env.example

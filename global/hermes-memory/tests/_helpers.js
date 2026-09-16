@@ -30,7 +30,7 @@ function mkTempHome() {
     sessionTailMessagesPerFlush: 200,
     globalOnlyTargets: ['USER.md'],
     projectScopedTargets: ['MEMORY.md', 'FAILURES.md', 'CONVENTIONS.md', 'SKILLS.md'],
-    memoryMode: 'policy-only',
+    memoryMode: 'project',
     memoryPolicyStyle: 'full',
     nudgeInterval: 10,
     nudgeToolCalls: 15,
